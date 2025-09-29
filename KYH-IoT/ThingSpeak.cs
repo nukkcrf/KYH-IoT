@@ -13,7 +13,7 @@ namespace KYH_IoT
             // GET https://api.thingspeak.com/update?api_key=D7HQNNWLRGS38LCN&field1=0
             var httpClient = new HttpClient();
             httpClient.BaseAddress = new Uri("https://api.thingspeak.com");
-            var response = httpClient.GetAsync($"/update?api_key=D7HQNNWLRGS38LCN&field1={temperature}&field2={humidity}&field3={fuelLevel}&field4={speedKmH}&field5={rpm}").Result;
+            var response = httpClient.GetAsync($"/update?api_key=D7HQNNWLRGS38LCN&field1={temperature}&field2={humidity}&field3={fuelLevel}%&field4={speedKmH}&field5={rpm}").Result;
             if (response.IsSuccessStatusCode)
             {
                 Console.WriteLine("Data sent to ThingSpeak successfully.");

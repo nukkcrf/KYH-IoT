@@ -22,8 +22,6 @@ namespace KYH_IoT
             {
                 Console.WriteLine($"Failed to send data to ThingSpeak. Status code: {response.StatusCode}");
             }
-
-           // throw new NotImplementedException();
         }
     }
 }

@@ -1,13 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace KYH_IoT
 {
     internal class Car
-
     {
         // These constants can be adjusted to change the simulation's behavior.
         private const double MaxFuelConsumptionPerSecond = 0.005; // liters per second
@@ -15,10 +10,7 @@ namespace KYH_IoT
         private const int MaxRpm = 6000;
         private const int MinSpeed = 0;
         private const int MaxSpeed = 120; // km/h
-        private const int UpdateIntervalSeconds = 15;
-        private const int TripDurationMinutes = 10;
 
-        // Instance variables to track the car's state
         private double _currentSpeed = 0;
         private double _currentRpm = IdleRpm;
         private double _currentFuelLevel = 100.0; // Starts at 100%
@@ -28,7 +20,6 @@ namespace KYH_IoT
         // Represents a single telemetry data point
         private class TelemetryData
         {
-            public double Speed { get; set; }
 
             public double Rpm { get; set; }
 
@@ -67,7 +58,6 @@ namespace KYH_IoT
 
                 Thread.Sleep(TimeSpan.FromSeconds(UpdateIntervalSeconds));
             }
-        }
 
         // Simulates the car's movement and state changes
         private void SimulateTrip()
@@ -101,17 +91,6 @@ namespace KYH_IoT
                 case "Decelerating":
                     _currentSpeed -= _random.Next(2, 5); // Decrease speed
                     _currentRpm = CalculateRpm(_currentSpeed);
-                    break;
-            }
-
-            // Clamp speed to a realistic range
-            _currentSpeed = Math.Max(MinSpeed, Math.Min(MaxSpeed, _currentSpeed));
-            _currentRpm = Math.Max(IdleRpm, _currentRpm);
-
-            // Calculate fuel consumption based on speed and RPM
-            double consumptionRate = (_currentSpeed / MaxSpeed) * (_currentRpm / MaxRpm) * MaxFuelConsumptionPerSecond;
-            _currentFuelLevel -= consumptionRate * UpdateIntervalSeconds;
-            _currentFuelLevel = Math.Max(0, _currentFuelLevel);
         }
 
         // A simple function to calculate RPM based on speed for a more realistic feel
@@ -121,8 +100,6 @@ namespace KYH_IoT
             {
                 return IdleRpm;
             }
-            // A simple linear relationship for simulation purposes
-            return IdleRpm + (speed / MaxSpeed) * (MaxRpm - IdleRpm);
         }
 
         // Generates a realistic engine temperature based on speed

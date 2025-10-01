@@ -1,24 +1,41 @@
-﻿namespace KYH_IoT
+﻿using System;
+using System.Threading.Tasks;
+
+namespace KYH_IoT
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            while (true)
+            Console.WriteLine("=== Car Telemetry Simulator (ThingSpeak) ===");
+            Console.WriteLine("Press ENTER to start, ESC to stop.");
+            Console.ReadLine();
+
+            var car = new Car();
+            var thingspeak = new ThingSpeak();
+
+            var start = DateTime.UtcNow;
+            var simulationDuration = TimeSpan.FromMinutes(10);
+            var interval = TimeSpan.FromSeconds(2); // ThingSpeak free limit
+
+            while (DateTime.UtcNow - start < simulationDuration)
             {
-                var thingspeak = new ThingSpeak();
-                int temperature = new Random().Next(0, 40);
-                int humidity = new Random().Next(0, 100);
-                int rpm = new Random().Next(1800, 7000);
-                int speedKmH = new Random().Next(0, 110);
-                int fuelLevel = new Random().Next(0, 100);
-                Console.WriteLine($"Temperature: {temperature} °C, Humidity: {humidity} %, RPM: {rpm}, Speed: {speedKmH} km/h, Fuel Level: {fuelLevel} %");
+                if (Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape)
+                    break;
 
-                thingspeak.SendData(temperature, humidity, rpm, speedKmH, fuelLevel);
-                System.Threading.Thread.Sleep(15000);
+                var sample = car.NextSample(interval);
 
+                Console.WriteLine(
+                    $"RPM:{sample.Rpm}  Speed:{sample.SpeedKmH} km/h  Fuel:{sample.FuelPercent}%  Temp:{sample.EngineTempC}°C");
+
+                bool sent = await thingspeak.SendAsync(sample);
+                //if (!sent)
+                 //   Console.WriteLine("[WARN] ThingSpeak did not accept the data point.");
+
+                await Task.Delay(interval);
             }
 
+            Console.WriteLine("Simulation finished.");
         }
     }
 }

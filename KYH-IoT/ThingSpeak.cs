@@ -1,26 +1,45 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace KYH_IoT
 {
     internal class ThingSpeak
     {
-        internal void SendData(int temperature, int humidity, int fuelLevel, int speedKmH, int rpm )
+       
+        private const string WriteKey = "D7HQNNWLRGS38LCN";
+
+        private static readonly HttpClient _http = new HttpClient
         {
-            // GET https://api.thingspeak.com/update?api_key=D7HQNNWLRGS38LCN&field1=0
-            var httpClient = new HttpClient();
-            httpClient.BaseAddress = new Uri("https://api.thingspeak.com");
-            var response = httpClient.GetAsync($"/update?api_key=D7HQNNWLRGS38LCN&field1={temperature}&field2={humidity}&field3={fuelLevel}%&field4={speedKmH}&field5={rpm}").Result;
-            if (response.IsSuccessStatusCode)
+            BaseAddress = new Uri("https://api.thingspeak.com")
+        };
+
+        public async Task<bool> SendAsync(TelemetryData data)
+        {
+            // URL to  update
+            var url = $"/update?api_key={WriteKey}" +
+                      $"&field1={data.Rpm}" +
+                      $"&field2={data.SpeedKmH}" +
+                      $"&field3={data.FuelPercent}" +
+                      $"&field4={data.EngineTempC}";
+
+            try
             {
-                Console.WriteLine("Data sent to ThingSpeak successfully.");
+                using var resp = await _http.GetAsync(url);
+                var body = await resp.Content.ReadAsStringAsync();
+
+                bool ok = resp.IsSuccessStatusCode && body != "New data : ";
+                if (!ok)
+                {
+                   Console.WriteLine($"[WARN] ThingSpeak aswers : {body}");
+                }
+
+                return ok;
             }
-            else
+            catch (Exception ex)
             {
-                Console.WriteLine($"Failed to send data to ThingSpeak. Status code: {response.StatusCode}");
+                Console.WriteLine($"[ERROR] : {ex.Message}");
+                return false;
             }
         }
     }

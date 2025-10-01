@@ -4,113 +4,189 @@ namespace KYH_IoT
 {
     internal class Car
     {
-        // These constants can be adjusted to change the simulation's behavior.
-        private const double MaxFuelConsumptionPerSecond = 0.005; // liters per second
+        private bool _engineOn = true;
+        private bool _lowFuelWarningIssued = false;
+
+        // Simulation parameters
+        private const int MaxSpeed = 120;
         private const int IdleRpm = 800;
         private const int MaxRpm = 6000;
-        private const int MinSpeed = 0;
-        private const int MaxSpeed = 120; // km/h
 
-        private double _currentSpeed = 0;
-        private double _currentRpm = IdleRpm;
-        private double _currentFuelLevel = 100.0; // Starts at 100%
-        private readonly Random _random = new Random();
-        private readonly HttpClient _httpClient = new HttpClient();
+        // Fuel parameters
+        private const double TankLiters = 100.0;   // big tank => slow % drop; adjust if needed
+        private const double IdleFuelLph = 1.0;    // liters per hour at idle
 
-        // Represents a single telemetry data point
-        private class TelemetryData
+        // Current state
+        private double _speed;
+        private double _rpm;
+        private double _fuelLiters;
+        private int _engineTempC = 90;
+
+        // Target speed management
+        private double _targetSpeed;
+        private DateTime _nextTargetChangeUtc;
+
+        private readonly Random _rng = new();
+
+        public Car()
         {
-
-            public double Rpm { get; set; }
-
-            public double FuelLevel { get; set; }
-
-            public double EngineTemp { get; set; }
+            _speed = 0;
+            _rpm = IdleRpm;
+            _fuelLiters = TankLiters;
+            SetNewTargetSpeed();
         }
 
-        // Main simulation loop
-        public async void StartSimulation()
+        public TelemetryData NextSample(TimeSpan step)
         {
-            Console.WriteLine("Starting car telemetry simulation...");
-            var startTime = DateTime.Now;
-
-            while (true)
+            // If engine is OFF, keep car stopped, cool down and report zeros
+            if (!_engineOn)
             {
-                var elapsedTime = DateTime.Now - startTime;
-                if (elapsedTime.TotalMinutes >= TripDurationMinutes)
-                {
-                    Console.WriteLine("Simulation finished. Trip duration reached.");
-                    break;
-                }
+                _speed = 0;
+                _rpm = 0;
+                if (_engineTempC > 80) _engineTempC = Math.Max(80, _engineTempC - 1);
 
-                SimulateTrip();
-
-                var data = new TelemetryData
+                return new TelemetryData
                 {
-                    Speed = Math.Round(_currentSpeed, 2),
-                    Rpm = Math.Round(_currentRpm, 2),
-                    FuelLevel = Math.Round(_currentFuelLevel, 2),
-                    EngineTemp = Math.Round(GenerateEngineTemperature(), 2)
+                    Rpm = 0,
+                    SpeedKmH = 0,
+                    FuelPercent = (int)Math.Round((_fuelLiters / TankLiters) * 100.0),
+                    EngineTempC = _engineTempC
                 };
-
-                Console.WriteLine($"Time: {elapsedTime.TotalSeconds:F0}s | Speed: {_currentSpeed:F0} km/h | RPM: {_currentRpm:F0} | Fuel: {_currentFuelLevel:F1}%");
-
-
-                Thread.Sleep(TimeSpan.FromSeconds(UpdateIntervalSeconds));
             }
 
-        // Simulates the car's movement and state changes
-        private void SimulateTrip()
+            MaybeChangeTarget();
+
+            // Limit acceleration for realism
+            double maxDeltaPerSec = 3.0;
+            double maxStep = maxDeltaPerSec * step.TotalSeconds;
+
+            double delta = _targetSpeed - _speed;
+            double change = Math.Clamp(delta, -maxStep, maxStep);
+
+            // Add small noise
+            change += (_rng.NextDouble() - 0.5) * 0.6;
+
+            _speed = Math.Clamp(_speed + change, 0, MaxSpeed);
+
+            // Consume fuel BEFORE we decide final RPM; may shut engine off
+            ConsumeFuel(step);
+
+            // If engine shut down due to no fuel, return zeros (no CalculateRpm!)
+            if (!_engineOn)
+            {
+                _speed = 0;
+                _rpm = 0;
+                if (_engineTempC > 80) _engineTempC = Math.Max(80, _engineTempC - 1);
+
+                return new TelemetryData
+                {
+                    Rpm = 0,
+                    SpeedKmH = 0,
+                    FuelPercent = (int)Math.Round((_fuelLiters / TankLiters) * 100.0),
+                    EngineTempC = _engineTempC
+                };
+            }
+
+            // RPM derived from speed only if engine is ON
+            _rpm = CalculateRpm(_speed);
+
+            // Engine temp variation
+            int tempDrift = (_rpm > 4000 ? 2 : 0) + _rng.Next(-1, 2);
+            _engineTempC = Math.Clamp(_engineTempC + tempDrift, 80, 99);
+
+            return new TelemetryData
+            {
+                Rpm = (int)Math.Round(_rpm),
+                SpeedKmH = (int)Math.Round(_speed),
+                FuelPercent = (int)Math.Round((_fuelLiters / TankLiters) * 100.0),
+                EngineTempC = _engineTempC
+            };
+        }
+
+        private void MaybeChangeTarget()
         {
-            // Simple state machine for the trip: Idle -> Accelerate -> Cruise -> Decelerate -> Idle
-            string tripPhase;
-            if (_currentSpeed < 30)
+            var now = DateTime.UtcNow;
+            if (now >= _nextTargetChangeUtc)
             {
-                tripPhase = "Accelerating";
+                SetNewTargetSpeed();
+                _nextTargetChangeUtc = now.AddSeconds(_rng.Next(30, 61));
             }
-            else if (_currentSpeed < 90)
+        }
+
+        private void SetNewTargetSpeed()
+        {
+            _targetSpeed = _rng.Next(0, MaxSpeed + 1);
+        }
+
+        private static double CalculateRpm(double speed)
+        {
+            if (speed < 1) return IdleRpm;
+            return IdleRpm + (speed / MaxSpeed) * (MaxRpm - IdleRpm);
+        }
+
+        private void ConsumeFuel(TimeSpan step)
+        {
+            if (!_engineOn) return;
+
+            // Use HOURS for fuel math or 
+            double hours = step.TotalSeconds;
+            double usedLiters;
+
+            // Percent, not liters absolute, for warnings
+            double fuelPercent = (_fuelLiters / TankLiters) * 100.0;
+
+            // One-time low fuel warning at < 25%
+            if (fuelPercent <= 25.0 && !_lowFuelWarningIssued && _fuelLiters > 0)
             {
-                tripPhase = "Cruising";
+                _lowFuelWarningIssued = true;
+                Console.WriteLine("  WARNING!! Low fuel!");
+            }
+
+            // If already empty -> shut down and return
+            if (_fuelLiters <= 0)
+            {
+                _fuelLiters = 0;
+                _engineOn = false;
+                _speed = 0;
+                _rpm = 0;
+                Console.WriteLine(" Fuel tank empty! Car stopped...");
+                return;
+            }
+
+            // Normal consumption
+            if (_speed < 1)
+            {
+                usedLiters = IdleFuelLph * hours;
             }
             else
             {
-                tripPhase = "Decelerating";
+                // Base consumption curve (L/100km)
+                double baseLPer100 = 6.2 + 4.0 * Math.Pow((_speed - 60) / 60.0, 2);
+                double km = _speed * hours;
+                usedLiters = baseLPer100 * (km / 100.0);
             }
 
-            // Adjust speed and RPM based on the current phase
-            switch (tripPhase)
-            {
-                case "Accelerating":
-                    _currentSpeed += _random.Next(2, 5); // Increase speed
-                    _currentRpm = CalculateRpm(_currentSpeed);
-                    break;
-                case "Cruising":
-                    _currentSpeed += _random.NextDouble() * 2 - 1; // Slight random fluctuation
-                    _currentRpm = CalculateRpm(_currentSpeed);
-                    break;
-                case "Decelerating":
-                    _currentSpeed -= _random.Next(2, 5); // Decrease speed
-                    _currentRpm = CalculateRpm(_currentSpeed);
-        }
+            // Small RPM factor
+            usedLiters *= (0.9 + 0.2 * (_rpm / MaxRpm));
 
-        // A simple function to calculate RPM based on speed for a more realistic feel
-        private double CalculateRpm(double speed)
-        {
-            if (speed < 1)
+            _fuelLiters = Math.Max(0, _fuelLiters - usedLiters);
+
+            if (_fuelLiters <= 0)
             {
-                return IdleRpm;
+                _fuelLiters = 0;
+                _engineOn = false;
+                _speed = 0;
+                _rpm = 0;
+                Console.WriteLine(" Fuel tank empty! Car stopped...");
             }
         }
+    }
 
-        // Generates a realistic engine temperature based on speed
-        private double GenerateEngineTemperature()
-        {
-            // Engine runs hotter at higher RPM/speed
-            double baseTemp = 85;
-            double speedFactor = _currentSpeed / MaxSpeed;
-            double temp = baseTemp + (speedFactor * _random.Next(0, 15));
-            return Math.Max(80, Math.Min(110, temp));
-        }
-
+    internal class TelemetryData
+    {
+        public int Rpm { get; set; }
+        public int SpeedKmH { get; set; }
+        public int FuelPercent { get; set; }
+        public int EngineTempC { get; set; }
     }
 }

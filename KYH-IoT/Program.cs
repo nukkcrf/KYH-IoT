@@ -26,7 +26,7 @@ namespace KYH_IoT
                 var sample = car.NextSample(interval);
 
                 Console.WriteLine(
-                    $"RPM:{sample.Rpm}  Speed:{sample.SpeedKmH} km/h  Fuel:{sample.FuelPercent}%  Temp:{sample.EngineTempC}°C");
+                    $"RPM:{sample.Rpm}  Speed:{sample.SpeedKmH} km/h FuelLiters:{sample.FuelLiters}L Fuel:{sample.FuelPercent}%  Temp:{sample.EngineTempC}°C");
 
                 bool sent = await thingspeak.SendAsync(sample);
                 //if (!sent)

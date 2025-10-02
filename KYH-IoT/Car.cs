@@ -13,7 +13,7 @@ namespace KYH_IoT
         private const int MaxRpm = 6000;
 
         // Fuel parameters
-        private const double TankLiters = 100.0;   // big tank => slow % drop; adjust if needed
+        private const double TankLiters = 80.0;   // big tank => slow % drop; adjust if needed
         private const double IdleFuelLph = 1.0;    // liters per hour at idle
 
         // Current state
@@ -99,6 +99,7 @@ namespace KYH_IoT
                 Rpm = (int)Math.Round(_rpm),
                 SpeedKmH = (int)Math.Round(_speed),
                 FuelPercent = (int)Math.Round((_fuelLiters / TankLiters) * 100.0),
+                FuelLiters = (int)Math.Round((_fuelLiters/ TankLiters)* 100.0),
                 EngineTempC = _engineTempC
             };
         }
@@ -188,5 +189,7 @@ namespace KYH_IoT
         public int SpeedKmH { get; set; }
         public int FuelPercent { get; set; }
         public int EngineTempC { get; set; }
+        public int FuelLiters { get; set; }
+
     }
 }

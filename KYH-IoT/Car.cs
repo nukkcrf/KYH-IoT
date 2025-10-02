@@ -1,25 +1,30 @@
 ﻿using System;
+using System.Threading.Tasks;
 
 namespace KYH_IoT
 {
     internal class Car
     {
-        private bool _engineOn = true;
-        private bool _lowFuelWarningIssued = false;
-
+        // ----------------------------
         // Simulation parameters
-        private const int MaxSpeed = 120;
-        private const int IdleRpm = 800;
-        private const int MaxRpm = 6000;
+        // ----------------------------
+        private const int MaxSpeed = 100;     // maximum speed [km/h]
+        private const int IdleRpm = 800;     // rpm at idle
+        private const int MaxRpm = 9000;    // maximum rpm
 
         // Fuel parameters
-        private const double TankLiters = 80.0;   // big tank => slow % drop; adjust if needed
-        private const double IdleFuelLph = 1.0;    // liters per hour at idle
+        private const double TankLiters = 70.0; // tank capacity [L]
+        private const double IdleFuelLph = 3.0;  // idle consumption [L/h]
+
+        // Simulation acceleration: how many times faster than real time
+        private const double TimeAcceleration = 2000.0; // ex: 3600.0 =   1 real sec = 1 simulated hour(tank empties in ~70 sec).
 
         // Current state
-        private double _speed;
-        private double _rpm;
-        private double _fuelLiters;
+        private bool _engineOn = true;
+        private bool _lowFuelWarningIssued = false;
+        private double _speed;          // km/h
+        private double _rpm;            // rpm
+        private double _fuelLiters;     // liters left
         private int _engineTempC = 90;
 
         // Target speed management
@@ -34,72 +39,64 @@ namespace KYH_IoT
             _rpm = IdleRpm;
             _fuelLiters = TankLiters;
             SetNewTargetSpeed();
+            _nextTargetChangeUtc = DateTime.UtcNow;
         }
 
         public TelemetryData NextSample(TimeSpan step)
         {
-            // If engine is OFF, keep car stopped, cool down and report zeros
+            // If engine is OFF: keep car stopped, cool down slowly, return zeros
             if (!_engineOn)
             {
                 _speed = 0;
                 _rpm = 0;
                 if (_engineTempC > 80) _engineTempC = Math.Max(80, _engineTempC - 1);
-
-                return new TelemetryData
-                {
-                    Rpm = 0,
-                    SpeedKmH = 0,
-                    FuelPercent = (int)Math.Round((_fuelLiters / TankLiters) * 100.0),
-                    EngineTempC = _engineTempC
-                };
+                return BuildTelemetry();
             }
 
             MaybeChangeTarget();
 
-            // Limit acceleration for realism
+            // Limit acceleration/deceleration for realism
             double maxDeltaPerSec = 3.0;
             double maxStep = maxDeltaPerSec * step.TotalSeconds;
 
             double delta = _targetSpeed - _speed;
             double change = Math.Clamp(delta, -maxStep, maxStep);
 
-            // Add small noise
+            // Add small random noise
             change += (_rng.NextDouble() - 0.5) * 0.6;
-
             _speed = Math.Clamp(_speed + change, 0, MaxSpeed);
 
-            // Consume fuel BEFORE we decide final RPM; may shut engine off
+            // Calculate RPM from current speed
+            _rpm = CalculateRpm(_speed);
+
+            // Consume fuel (may shut down the engine if empty)
             ConsumeFuel(step);
 
-            // If engine shut down due to no fuel, return zeros (no CalculateRpm!)
             if (!_engineOn)
             {
                 _speed = 0;
                 _rpm = 0;
                 if (_engineTempC > 80) _engineTempC = Math.Max(80, _engineTempC - 1);
-
-                return new TelemetryData
-                {
-                    Rpm = 0,
-                    SpeedKmH = 0,
-                    FuelPercent = (int)Math.Round((_fuelLiters / TankLiters) * 100.0),
-                    EngineTempC = _engineTempC
-                };
+                return BuildTelemetry();
             }
 
-            // RPM derived from speed only if engine is ON
-            _rpm = CalculateRpm(_speed);
-
-            // Engine temp variation
+            // Engine temperature drift
             int tempDrift = (_rpm > 4000 ? 2 : 0) + _rng.Next(-1, 2);
             _engineTempC = Math.Clamp(_engineTempC + tempDrift, 80, 99);
+
+            return BuildTelemetry();
+        }
+
+        private TelemetryData BuildTelemetry()
+        {
+            double fuelPercent = (_fuelLiters / TankLiters) * 100.0;
 
             return new TelemetryData
             {
                 Rpm = (int)Math.Round(_rpm),
                 SpeedKmH = (int)Math.Round(_speed),
-                FuelPercent = (int)Math.Round((_fuelLiters / TankLiters) * 100.0),
-                FuelLiters = (int)Math.Round((_fuelLiters/ TankLiters)* 100.0),
+                FuelLiters = Math.Round(_fuelLiters, 2),
+                FuelPercent = Math.Round(fuelPercent, 1),
                 EngineTempC = _engineTempC
             };
         }
@@ -129,57 +126,50 @@ namespace KYH_IoT
         {
             if (!_engineOn) return;
 
-            // Use HOURS for fuel math or 
-            double hours = step.TotalSeconds;
+            // Scale simulated time by TimeAcceleration
+            double hours = step.TotalHours * TimeAcceleration;
             double usedLiters;
 
-            // Percent, not liters absolute, for warnings
             double fuelPercent = (_fuelLiters / TankLiters) * 100.0;
-
-            // One-time low fuel warning at < 25%
             if (fuelPercent <= 25.0 && !_lowFuelWarningIssued && _fuelLiters > 0)
             {
                 _lowFuelWarningIssued = true;
-                Console.WriteLine("  WARNING!! Low fuel!");
+                Console.WriteLine("WARNING: Low fuel.");
             }
 
-            // If already empty -> shut down and return
             if (_fuelLiters <= 0)
             {
-                _fuelLiters = 0;
-                _engineOn = false;
-                _speed = 0;
-                _rpm = 0;
-                Console.WriteLine(" Fuel tank empty! Car stopped...");
+                StopEngineDueToFuel();
                 return;
             }
 
-            // Normal consumption
             if (_speed < 1)
             {
                 usedLiters = IdleFuelLph * hours;
             }
             else
             {
-                // Base consumption curve (L/100km)
                 double baseLPer100 = 6.2 + 4.0 * Math.Pow((_speed - 60) / 60.0, 2);
                 double km = _speed * hours;
                 usedLiters = baseLPer100 * (km / 100.0);
             }
 
-            // Small RPM factor
             usedLiters *= (0.9 + 0.2 * (_rpm / MaxRpm));
-
             _fuelLiters = Math.Max(0, _fuelLiters - usedLiters);
 
             if (_fuelLiters <= 0)
             {
-                _fuelLiters = 0;
-                _engineOn = false;
-                _speed = 0;
-                _rpm = 0;
-                Console.WriteLine(" Fuel tank empty! Car stopped...");
+                StopEngineDueToFuel();
             }
+        }
+
+        private void StopEngineDueToFuel()
+        {
+            _fuelLiters = 0;
+            _engineOn = false;
+            _speed = 0;
+            _rpm = 0;
+            Console.WriteLine("Fuel tank empty. Car stopped.");
         }
     }
 
@@ -187,9 +177,8 @@ namespace KYH_IoT
     {
         public int Rpm { get; set; }
         public int SpeedKmH { get; set; }
-        public int FuelPercent { get; set; }
+        public double FuelLiters { get; set; }
+        public double FuelPercent { get; set; }
         public int EngineTempC { get; set; }
-        public int FuelLiters { get; set; }
-
     }
 }

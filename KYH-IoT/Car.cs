@@ -5,16 +5,14 @@ namespace KYH_IoT
 {
     internal class Car
     {
-        // ----------------------------
-        // Simulation parameters
-        // ----------------------------
-        private const int MaxSpeed = 100;     // maximum speed [km/h]
-        private const int IdleRpm = 800;     // rpm at idle
-        private const int MaxRpm = 9000;    // maximum rpm
+        
+        private const int MaxSpeed = 100;     //  [km/h]
+        private const int IdleRpm = 800;     
+        private const int MaxRpm = 9000;
 
-        // Fuel parameters
-        private const double TankLiters = 70.0; // tank capacity [L]
-        private const double IdleFuelLph = 3.0;  // idle consumption [L/h]
+        // Fuel tank and consumption
+        private const double TankLiters = 75.0; // tank capacity [L]
+        private const double IdleFuelLph = 2.0;  //  [L/h]
 
         // Simulation acceleration: how many times faster than real time
         private const double TimeAcceleration = 2000.0; // ex: 3600.0 =   1 real sec = 1 simulated hour(tank empties in ~70 sec).
@@ -131,10 +129,10 @@ namespace KYH_IoT
             double usedLiters;
 
             double fuelPercent = (_fuelLiters / TankLiters) * 100.0;
-            if (fuelPercent <= 25.0 && !_lowFuelWarningIssued && _fuelLiters > 0)
+            if (fuelPercent <= 30.0 && !_lowFuelWarningIssued && _fuelLiters > 0)
             {
                 _lowFuelWarningIssued = true;
-                Console.WriteLine("WARNING: Low fuel.");
+                Console.WriteLine("!!!!!!!!!!   WARNING: Low fuel.");
             }
 
             if (_fuelLiters <= 0)
@@ -169,7 +167,10 @@ namespace KYH_IoT
             _engineOn = false;
             _speed = 0;
             _rpm = 0;
-            Console.WriteLine("Fuel tank empty. Car stopped.");
+            Console.WriteLine();
+            Console.WriteLine("=========Fuel tank empty. Car stopped.=========");
+            Console.WriteLine();
+            Console.WriteLine("---------Engine cooling initiated------------");
         }
     }
 

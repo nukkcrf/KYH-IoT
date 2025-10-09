@@ -15,7 +15,7 @@ namespace KYH_IoT
             var thingspeak = new ThingSpeak();
 
             var start = DateTime.UtcNow;
-            var simulationDuration = TimeSpan.FromMinutes(10);
+            var simulationDuration = TimeSpan.FromMinutes(1);
             var interval = TimeSpan.FromSeconds(4); // ThingSpeak free limit
 
             while (DateTime.UtcNow - start < simulationDuration)

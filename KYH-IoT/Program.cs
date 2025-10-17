@@ -13,10 +13,14 @@ namespace KYH_IoT
 
             var car = new Car();
             var thingspeak = new ThingSpeak();
+            var analyzer = new Analyss();
 
             var start = DateTime.UtcNow;
             var simulationDuration = TimeSpan.FromMinutes(1);
             var interval = TimeSpan.FromSeconds(4); // ThingSpeak free limit
+
+            var lastStatsPrinted = DateTime.MinValue;
+            var statsInterval = TimeSpan.FromSeconds(15);
 
             while (DateTime.UtcNow - start < simulationDuration)
             {
@@ -24,17 +28,26 @@ namespace KYH_IoT
                     break;
 
                 var sample = car.NextSample(interval);
+                analyzer.AddSample(sample);
+
 
                 Console.WriteLine(
                     $"RPM:{sample.Rpm}  Speed:{sample.SpeedKmH} km/h FuelLiters:{sample.FuelLiters}L Fuel:{sample.FuelPercent}%  Temp:{sample.EngineTempC}°C");
 
                 bool sent = await thingspeak.SendAsync(sample);
-                //if (!sent)
-                 //   Console.WriteLine("[WARN] ThingSpeak did not accept the data point.");
+                if (DateTime.UtcNow - lastStatsPrinted >= statsInterval)
+                {
+                    //Console.WriteLine(analyzer.GetSummary());
+                    lastStatsPrinted = DateTime.UtcNow;
+                }
 
                 await Task.Delay(interval);
             }
-
+            Console.WriteLine("\n********************************");
+            Console.WriteLine();
+            Console.WriteLine("\n====Final analysis====");
+            Console.WriteLine();
+            Console.WriteLine(analyzer.GetSummary());
             Console.WriteLine("Simulation finished.");
         }
     }

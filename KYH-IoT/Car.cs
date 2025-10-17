@@ -132,6 +132,7 @@ namespace KYH_IoT
             if (fuelPercent <= 30.0 && !_lowFuelWarningIssued && _fuelLiters > 0)
             {
                 _lowFuelWarningIssued = true;
+                Console.WriteLine();
                 Console.WriteLine("!!!!!!!!!!   WARNING: Low fuel.");
             }
 
